@@ -1,0 +1,43 @@
+name: 月次 新刊おすすめ
+
+on:
+  schedule:
+    # 毎月3日 9:17 JST（00:17 UTC）。月初は予約→発売の反映待ちで少し遅らせる
+    - cron: "17 0 3 * *"
+  workflow_dispatch:
+    inputs:
+      month:
+        description: "対象月 YYYY-MM（空欄なら今月）"
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: レポート生成
+        env:
+          RAKUTEN_APP_ID: ${{ secrets.RAKUTEN_APP_ID }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          READING_PREFERENCES: ${{ vars.READING_PREFERENCES }}
+          MONTH: ${{ github.event.inputs.month }}
+        run: |
+          python monthly_report.py ${MONTH:+--month "$MONTH"} --out report.md
+      - name: Issue として投稿（GitHub から通知が届きます）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="$(head -n 1 report.md | sed 's/^# //')"
+          gh issue create --title "$title" --body-file report.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: book-report
+          path: report.md

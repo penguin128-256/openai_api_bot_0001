@@ -1,9 +1,9 @@
 
 import streamlit as st
-import openai
+from openai import OpenAI
 
 # Streamlit Community Cloudの「Secrets」からOpenAI API keyを取得
-openai.api_key = st.secrets.OpenAIAPI.openai_api_key
+client = OpenAI(api_key=st.secrets.OpenAIAPI.openai_api_key)
 
 # st.session_stateを使いメッセージのやりとりを保存
 if "messages" not in st.session_state:
@@ -18,20 +18,20 @@ def communicate():
     user_message = {"role": "user", "content": st.session_state["user_input"]}
     messages.append(user_message)
 
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+    response = client.chat.completions.create(
+        model=st.secrets.OpenAIAPI.get("model", "gpt-4o-mini"),
         messages=messages
-    )  
+    )
 
-    bot_message = response["choices"][0]["message"]
-    messages.append(bot_message)
+    bot_message = response.choices[0].message
+    messages.append({"role": bot_message.role, "content": bot_message.content})
 
     st.session_state["user_input"] = ""  # 入力欄を消去
 
 
 # ユーザーインターフェイスの構築
 st.title("My AI Assistant")
-st.write("ChatGPT APIを使ったチャットボットです。")
+st.write("ChatGPT APIを使ったチャットボットです。新刊のおすすめは左のメニュー「📚 新刊おすすめ」から。")
 
 user_input = st.text_input("メッセージを入力してください。", key="user_input", on_change=communicate)
 
