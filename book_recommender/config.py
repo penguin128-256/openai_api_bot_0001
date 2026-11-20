@@ -33,5 +33,14 @@ def rakuten_application_id() -> str | None:
     return get_setting("RakutenAPI", "application_id", "RAKUTEN_APP_ID")
 
 
+def rakuten_access_key() -> str | None:
+    return get_setting("RakutenAPI", "access_key", "RAKUTEN_ACCESS_KEY")
+
+
+def book_source() -> str:
+    """auto（楽天が設定済みなら楽天→失敗時NDL）/ rakuten / ndl"""
+    return (get_setting("Books", "source", "BOOK_SOURCE", "auto") or "auto").lower()
+
+
 def rakuten_endpoint() -> str:
     return get_setting("RakutenAPI", "endpoint", "RAKUTEN_ENDPOINT", DEFAULT_ENDPOINT)

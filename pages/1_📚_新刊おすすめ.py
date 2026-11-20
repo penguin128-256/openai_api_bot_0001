@@ -7,7 +7,7 @@ from book_recommender.service import make_clients, recommend_for_genres, shift_m
 
 st.set_page_config(page_title="新刊おすすめ", page_icon="📚", layout="wide")
 st.title("📚 今月の新刊おすすめ")
-st.caption("楽天ブックスの新刊情報から、あなたの好みに合う本をAIがジャンルごとに選びます。")
+st.caption("新刊情報（楽天ブックス／国立国会図書館サーチ）から、あなたの好みに合う本をAIがジャンルごとに選びます。")
 
 today = date.today()
 month_options = [shift_month(today, d) for d in (1, 0, -1, -2)]
@@ -28,6 +28,14 @@ with st.sidebar:
         format_func=lambda g: g.label,
     )
     top_n = st.slider("ジャンルごとの冊数", 1, 10, 5)
+    source_labels = {
+        "auto": "自動（楽天→だめなら国会図書館）",
+        "ndl": "国立国会図書館サーチ（登録不要）",
+        "rakuten": "楽天ブックス（要アプリID・accessKey）",
+    }
+    source = st.selectbox("データ取得元", list(source_labels), format_func=source_labels.get)
+    if source != "rakuten":
+        st.caption("国会図書館は納本後の登録のため、発売から数日〜数週間遅れます。月初は先月を選ぶと充実します。")
     preferences = st.text_area(
         "あなたの好み（任意）",
         value=st.session_state.get("preferences", ""),
@@ -39,10 +47,12 @@ with st.sidebar:
 
 
 @st.cache_data(ttl=60 * 60 * 12, show_spinner=False)
-def cached_recommend(year: int, month: int, genre_keys: tuple, preferences: str, top_n: int):
+def cached_recommend(
+    year: int, month: int, genre_keys: tuple, preferences: str, top_n: int, source: str
+):
     genres = [g for g in GENRES if g.key in genre_keys]
-    rakuten, recommender = make_clients()
-    return recommend_for_genres(rakuten, recommender, genres, year, month, preferences, top_n)
+    sources, recommender = make_clients(source)
+    return recommend_for_genres(sources, recommender, genres, year, month, preferences, top_n)
 
 
 if run:
@@ -52,7 +62,7 @@ if run:
     try:
         with st.spinner("新刊を集めて、おすすめを選んでいます…（ジャンルあたり20〜40秒ほど）"):
             st.session_state["results"] = cached_recommend(
-                year, month, tuple(g.key for g in selected), preferences, top_n
+                year, month, tuple(g.key for g in selected), preferences, top_n, source
             )
         st.session_state["results_month"] = (year, month)
     except Exception as e:  # APIキー未設定・通信エラーなど
@@ -71,7 +81,9 @@ for tab, res in zip(tabs, results):
     with tab:
         if res.summary:
             st.markdown(f"_{res.summary}_")
-        st.caption(f"候補 {res.candidate_count} 冊から選定")
+        st.caption(f"{res.source} の候補 {res.candidate_count} 冊から選定")
+        if res.notice:
+            st.warning(res.notice)
         if not res.recommendations:
             st.write("おすすめできる新刊が見つかりませんでした。")
         for i, rec in enumerate(res.recommendations, 1):

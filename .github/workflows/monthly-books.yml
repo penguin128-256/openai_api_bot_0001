@@ -2,12 +2,13 @@ name: 月次 新刊おすすめ
 
 on:
   schedule:
-    # 毎月3日 9:17 JST（00:17 UTC）。月初は予約→発売の反映待ちで少し遅らせる
-    - cron: "17 0 3 * *"
+    # 毎月15日 9:17 JST（00:17 UTC）に「先月」の新刊を対象に実行。
+    # 国会図書館サーチは発売から登録まで数日〜数週間かかるため、月半ばまで待つ
+    - cron: "17 0 15 * *"
   workflow_dispatch:
     inputs:
       month:
-        description: "対象月 YYYY-MM（空欄なら今月）"
+        description: "対象月 YYYY-MM（空欄なら先月）"
         required: false
 
 permissions:
@@ -26,11 +27,15 @@ jobs:
       - name: レポート生成
         env:
           RAKUTEN_APP_ID: ${{ secrets.RAKUTEN_APP_ID }}
+          RAKUTEN_ACCESS_KEY: ${{ secrets.RAKUTEN_ACCESS_KEY }}
+          # Actions は実行IPが固定でないため、楽天の許可IP設定と相性が悪い。既定は国会図書館
+          BOOK_SOURCE: ${{ vars.BOOK_SOURCE || 'ndl' }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           READING_PREFERENCES: ${{ vars.READING_PREFERENCES }}
           MONTH: ${{ github.event.inputs.month }}
         run: |
-          python monthly_report.py ${MONTH:+--month "$MONTH"} --out report.md
+          MONTH="${MONTH:-$(date -u -d "$(date -u +%Y-%m-01) -1 month" +%Y-%m)}"
+          python monthly_report.py --month "$MONTH" --out report.md
       - name: Issue として投稿（GitHub から通知が届きます）
         env:
           GH_TOKEN: ${{ github.token }}

@@ -29,6 +29,10 @@ def parse_args(argv=None):
     )
     p.add_argument("--top", type=int, default=5, help="ジャンルごとの冊数")
     p.add_argument("--preferences", default=os.environ.get("READING_PREFERENCES", ""))
+    p.add_argument(
+        "--source", choices=["auto", "ndl", "rakuten"], default=None,
+        help="データ取得元（省略時は BOOK_SOURCE 環境変数、なければ auto）",
+    )
     p.add_argument("--out", help="出力ファイル（省略時は標準出力）")
     return p.parse_args(argv)
 
@@ -47,9 +51,9 @@ def main(argv=None) -> int:
         print(f"不明なジャンル: {e}", file=sys.stderr)
         return 2
 
-    rakuten, recommender = make_clients()
+    sources, recommender = make_clients(args.source)
     results = recommend_for_genres(
-        rakuten, recommender, genres, year, month, args.preferences, args.top,
+        sources, recommender, genres, year, month, args.preferences, args.top,
         on_progress=lambda m: print(m, file=sys.stderr),
     )
     md = to_markdown(year, month, results)

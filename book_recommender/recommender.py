@@ -27,6 +27,8 @@ class GenreResult:
     summary: str
     recommendations: list[Recommendation]
     candidate_count: int
+    source: str = ""
+    notice: str = ""
 
 
 def select_candidates(books: list[Book], limit: int = MAX_CANDIDATES) -> list[Book]:

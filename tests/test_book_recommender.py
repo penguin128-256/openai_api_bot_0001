@@ -17,6 +17,8 @@ def item(title, sales_date, caption="内容紹介", reviews=0):
 
 
 class FakeResponse:
+    status_code = 200
+
     def __init__(self, data):
         self._data = data
 

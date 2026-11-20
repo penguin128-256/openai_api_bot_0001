@@ -8,7 +8,9 @@ from dataclasses import asdict, dataclass
 
 import requests
 
-DEFAULT_ENDPOINT = "https://app.rakuten.co.jp/services/api/BooksBook/Search/20170404"
+# 2026年の楽天API刷新で旧ドメイン app.rakuten.co.jp は停止。新ドメイン＋accessKey 認証が必要。
+# 楽天側でパスが異なる場合は Secrets / 環境変数の endpoint で上書きしてください。
+DEFAULT_ENDPOINT = "https://openapi.rakuten.co.jp/services/api/BooksBook/Search/20170404"
 HITS_PER_PAGE = 30  # APIの上限
 REQUEST_INTERVAL_SEC = 1.0  # 楽天APIは1秒に1リクエスト程度に抑える
 
@@ -60,10 +62,25 @@ def _to_book(item: dict) -> Book:
     )
 
 
+class RakutenAPIError(RuntimeError):
+    def __init__(self, status: int, body: str):
+        hint = {
+            401: "アプリIDまたは accessKey が正しくありません。",
+            403: "許可IPに現在のサーバーのIPが含まれていない可能性があります。",
+            503: "認証エラーの可能性があります。アプリ種別が『バックエンドサービス』か、"
+                 "新しい(UUID形式の)アプリIDと accessKey を使っているか確認してください。",
+        }.get(status, "")
+        super().__init__(f"楽天API エラー {status}: {hint} {body}".strip())
+        self.status = status
+
+
 class RakutenBooksClient:
+    name = "楽天ブックス"
+
     def __init__(
         self,
         application_id: str,
+        access_key: str = "",
         endpoint: str = DEFAULT_ENDPOINT,
         session: requests.Session | None = None,
         sleep=time.sleep,
@@ -71,6 +88,7 @@ class RakutenBooksClient:
         if not application_id:
             raise ValueError("楽天のアプリケーションIDが設定されていません。")
         self.application_id = application_id
+        self.access_key = access_key
         self.endpoint = endpoint
         self.session = session or requests.Session()
         self._sleep = sleep
@@ -86,9 +104,16 @@ class RakutenBooksClient:
             "page": page,
             "outOfStockFlag": 1,  # 予約受付中の本も含める
         }
+        if self.access_key:
+            params["accessKey"] = self.access_key
+        # 新APIはバックエンド型アプリで Origin ヘッダを付けると 503 になるため付けない
         resp = self.session.get(self.endpoint, params=params, timeout=20)
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            raise RakutenAPIError(resp.status_code, resp.text[:300])
         return resp.json()
+
+    def fetch(self, genre, year: int, month: int) -> list[Book]:
+        return self.fetch_new_releases(genre.rakuten_genre_id, year, month)
 
     def fetch_new_releases(
         self, genre_id: str, year: int, month: int, max_pages: int = 15

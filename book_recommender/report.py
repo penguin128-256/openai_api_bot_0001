@@ -25,6 +25,7 @@ def to_markdown(year: int, month: int, results: list[GenreResult]) -> str:
             if rec.who_for:
                 lines.append(f"- **こんな人に**: {rec.who_for}")
             lines.append("")
-        lines.append(f"<sub>候補 {res.candidate_count} 冊から選定</sub>")
+        src = f"{res.source} の" if res.source else ""
+        lines.append(f"<sub>{src}候補 {res.candidate_count} 冊から選定{res.notice}</sub>")
         lines.append("")
     return "\n".join(lines)
