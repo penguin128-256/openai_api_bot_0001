@@ -28,7 +28,7 @@ python nb2pdf.py viewer --show --limit 5   # ブラウザを表示して動き�
 python nb2pdf.py viewer --debug            # ビューアーの画面と構造を debug/ に保存(設定調整用)
 ```
 
-`config.toml` の `[viewer]` で、撮影範囲(`page_selector`)やページのめくり方(`next_actions`)を調整できます。
+`config.toml` の `[viewer]` で、撮影範囲(`page_selector`)やページのめくり方(`next_actions`)を調整できます。紙面が iframe の中に表示されるビューアーでは `frame_selector` に iframe のセレクタを設定してください(`--debug` の `viewer.json` に iframe の一覧と、各 iframe 内の要素が出ます)。
 
 ## 記事モード(run)のしくみ
 

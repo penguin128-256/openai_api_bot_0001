@@ -513,9 +513,7 @@ def cmd_viewer(args, cfg) -> None:
             viewer.save_debug(vpage, BASE_DIR / "debug")
             browser.close()
             return
-        shots = viewer.capture_viewer(vpage, vcfg)
-        if args.limit:
-            shots = shots[: args.limit]
+        shots = viewer.capture_viewer(vpage, vcfg, limit=args.limit)
         ctx.storage_state(path=str(SESSION_FILE))
         browser.close()
     log(f"{len(shots)} ページを撮影しました。PDFにまとめます。")
