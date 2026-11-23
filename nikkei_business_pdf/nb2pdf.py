@@ -61,50 +61,67 @@ def normalize_url(url: str) -> str:
     return urlunparse((p.scheme, p.netloc, p.path, "", "", ""))
 
 
+DATE_RE = re.compile(r"(\d{4})年(\d{1,2})月(\d{1,2})日")
+
+
+def parse_issue_date(text: str) -> str | None:
+    """「2026年11月23日号」のような文字列から YYYYMMDD を取り出す(合併号は最初の日付)。"""
+    m = DATE_RE.search(text or "")
+    if not m:
+        return None
+    return f"{int(m.group(1)):04d}{int(m.group(2)):02d}{int(m.group(3)):02d}"
+
+
 def find_latest_issue(page, cfg: dict) -> tuple[str, str]:
-    """バックナンバー一覧から最新号のURLと日付(YYYYMMDD)を返す。"""
+    """バックナンバー一覧から最新号の目次URLと日付(YYYYMMDD)を返す。"""
     nk = cfg["nikkei"]
     page.goto(nk["magazine_url"], wait_until="domcontentloaded")
     page.wait_for_timeout(nk.get("wait_ms", 1500))
     pattern = re.compile(nk["issue_link_pattern"])
-    best: tuple[str, str] | None = None
-    for href in page.eval_on_selector_all("a[href]", "els => els.map(e => e.href)"):
+    best: tuple[int, str, str] | None = None  # (号番号, URL, リンク文字列)
+    links = page.eval_on_selector_all(
+        "a[href]", "els => els.map(e => [e.href, e.innerText.trim()])")
+    for href, text in links:
         m = pattern.search(href)
-        if m and (best is None or m.group(1) > best[1]):
-            best = (href.split("#")[0], m.group(1))
+        if m and (best is None or int(m.group(1)) > best[0]):
+            best = (int(m.group(1)), normalize_url(href), text)
     if best is None:
-        # 号ページへのリンクが見つからない場合は、一覧ページ自体を最新号として扱う
-        log("号ページへのリンクが見つかりませんでした。一覧ページを最新号として扱います。")
-        return nk["magazine_url"], datetime.now().strftime("%Y%m%d")
-    return best
+        sys.exit("最新号のリンクが見つかりませんでした。config.toml の issue_link_pattern を確認してください。")
+    date = parse_issue_date(best[2]) or datetime.now().strftime("%Y%m%d")
+    return best[1], date
 
 
-def collect_articles(page, issue_url: str, cfg: dict) -> list[Article]:
-    """号ページから記事リンクを、紙面に近い順序(ページ上の出現順)で集める。"""
+def collect_articles(page, issue_url: str, cfg: dict) -> tuple[list[Article], str | None]:
+    """号の目次ページから記事リンクを紙面の順序で集める。(記事一覧, 号の日付)を返す。"""
     nk = cfg["nikkei"]
     page.goto(issue_url, wait_until="domcontentloaded")
     page.wait_for_timeout(nk.get("wait_ms", 1500))
-    # 各リンクについて、直前の見出し(h2/h3)をセクション名として取得
+    date = parse_issue_date(page.evaluate(
+        "() => [...document.querySelectorAll('h1')].map(e => e.innerText).join(' ')"))
+    # 目次部分(toc_selector)の中だけを見て、各リンクの直前の見出しをセクション名にする
     raw = page.evaluate(
-        """() => {
+        """([rootSel, headSel]) => {
+            const root = (rootSel && document.querySelector(rootSel)) || document.body;
             const out = [];
             let section = "";
-            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
             while (walker.nextNode()) {
                 const el = walker.currentNode;
-                if (/^H[23]$/.test(el.tagName) && !el.closest('a')) {
-                    section = el.innerText.trim();
+                if (el.matches(headSel) && !el.closest('a')) {
+                    section = el.innerText.trim().split('\\n')[0];
                 } else if (el.tagName === 'A' && el.href) {
                     out.push({href: el.href, text: el.innerText.trim(), section});
                 }
             }
             return out;
-        }"""
+        }""",
+        [nk.get("toc_selector", ""), nk.get("section_heading_selector", "h2")],
     )
     pattern = re.compile(nk["article_link_pattern"])
+    exclude = re.compile(nk["article_exclude_pattern"]) if nk.get("article_exclude_pattern") else None
     seen: dict[str, Article] = {}
     for item in raw:
-        if not pattern.search(item["href"]):
+        if not pattern.search(item["href"]) or (exclude and exclude.search(item["href"])):
             continue
         url = normalize_url(item["href"])
         title = re.sub(r"\s+", " ", item["text"]).strip()
@@ -113,8 +130,7 @@ def collect_articles(page, issue_url: str, cfg: dict) -> list[Article]:
                 seen[url].title = title
             continue
         seen[url] = Article(url=url, title=title, section=item["section"])
-    articles = list(seen.values())[: nk.get("max_articles", 150)]
-    return articles
+    return list(seen.values())[: nk.get("max_articles", 150)], date
 
 
 # ---------------------------------------------------------------- PDF化
@@ -158,10 +174,10 @@ def render_page(page, url: str, out: Path, cfg: dict) -> tuple[str, list[str]]:
         pass
     page.wait_for_timeout(nk.get("wait_ms", 1500))
     scroll_to_bottom(page)
-    page.add_style_tag(content=print_css(cfg))
     title = page.evaluate(
         "() => (document.querySelector('h1')?.innerText || document.title || '').trim()"
     )
+    title = re.sub(r"[：:|｜]\s*日経ビジネス電子版\s*$", "", title)
     # 同じ記事の続きページ(?P=2 など)を探す
     next_pat = re.compile(nk.get("next_page_pattern", r"[?&]P=(\d+)"))
     base = normalize_url(url)
@@ -169,6 +185,17 @@ def render_page(page, url: str, out: Path, cfg: dict) -> tuple[str, list[str]]:
     for href in page.eval_on_selector_all("a[href]", "els => els.map(e => e.href)"):
         if normalize_url(href) == base and next_pat.search(href):
             nexts.append(href.split("#")[0])
+
+    # 本文だけを取り出して、読みやすいレイアウトで組み直す(リーダー表示)
+    body = extract_article_html(page, cfg)
+    if body:
+        page.set_content(reader_html(body, url, cfg), wait_until="domcontentloaded")
+        try:
+            page.wait_for_load_state("networkidle", timeout=20000)  # 画像の読み込み待ち
+        except Exception:
+            pass
+    else:  # 本文が見つからない場合はページ全体を印刷用CSSで出力
+        page.add_style_tag(content=print_css(cfg))
     m = f"{pdf.get('margin_mm', 12)}mm"
     page.pdf(
         path=str(out),
@@ -177,6 +204,66 @@ def render_page(page, url: str, out: Path, cfg: dict) -> tuple[str, list[str]]:
         margin={"top": m, "bottom": m, "left": m, "right": m},
     )
     return title, nexts
+
+
+def extract_article_html(page, cfg: dict) -> str:
+    """記事ページから、見出し・メタ情報・本文などの要素(article_selectors)だけを取り出す。"""
+    nk = cfg["nikkei"]
+    return page.evaluate(
+        """([sels, removeSels]) => {
+            const parts = [], originals = [];
+            for (const sel of sels) {
+                for (const el of document.querySelectorAll(sel)) {
+                    if (originals.some(o => o.contains(el))) continue;  // 取り出し済み要素の中身は重複させない
+                    originals.push(el);
+                    const c = el.cloneNode(true);
+                    // 遅延読み込み画像の実URLを src に入れ、URLを絶対パスにする
+                    c.querySelectorAll('img').forEach(img => {
+                        const real = img.dataset.src || img.dataset.original || img.getAttribute('src');
+                        if (real) img.setAttribute('src', new URL(real, location.href).href);
+                        img.removeAttribute('srcset'); img.removeAttribute('loading');
+                    });
+                    c.querySelectorAll('source').forEach(s => s.remove());
+                    if (removeSels) c.querySelectorAll(removeSels).forEach(x => x.remove());
+                    c.dataset.part = sel;
+                    parts.push(c);
+                }
+            }
+            // 本文(最後のセレクタ)が無ければ失敗扱い
+            if (!parts.some(p => p.dataset.part === sels[sels.length - 1])) return "";
+            return parts.map(p => p.outerHTML).join("\\n");
+        }""",
+        [nk.get("article_selectors", []), ",".join(nk.get("article_remove_selectors", []))],
+    ) if nk.get("article_selectors") else ""
+
+
+def reader_html(body: str, url: str, cfg: dict) -> str:
+    scale = cfg["pdf"].get("font_scale", 1.0)
+    return f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<base href="{html.escape(url)}"><style>
+  html {{ font-size: {11 * scale:.1f}pt; }}
+  body {{ font-family: 'Hiragino Mincho ProN', 'Noto Serif CJK JP', 'Yu Mincho', serif;
+         line-height: 1.85; color: #111; margin: 0; }}
+  h1 {{ font-family: 'Hiragino Sans', 'Noto Sans CJK JP', sans-serif; font-size: 1.9em;
+        line-height: 1.35; margin: .2em 0 .4em; }}
+  h2, h3, h4 {{ font-family: 'Hiragino Sans', 'Noto Sans CJK JP', sans-serif; line-height: 1.4;
+               margin: 1.4em 0 .5em; page-break-after: avoid; }}
+  p {{ margin: 0 0 .9em; text-align: justify; }}
+  a {{ color: inherit; text-decoration: none; }}
+  img {{ max-width: 100%; height: auto; display: block; margin: .6em auto; page-break-inside: avoid; }}
+  figure {{ margin: 1em 0; page-break-inside: avoid; }}
+  figcaption, small, .caption {{ font-size: .8em; color: #555; line-height: 1.5; }}
+  ul, ol {{ padding-left: 1.4em; }}
+  table {{ border-collapse: collapse; font-size: .9em; }} td, th {{ border: 1px solid #ccc; padding: 2px 6px; }}
+  [data-part*="parentTitle"] {{ font-size: .9em; color: #c00; font-weight: bold; margin: 0; }}
+  [data-part*="meta"] {{ font-size: .8em; color: #555; list-style: none; padding: 0; margin: 0 0 1em; }}
+  [data-part*="meta"] li {{ display: inline; margin-right: 1em; }}
+  [data-part*="meta"] img {{ display: none; }}
+  .source-url {{ font-size: .7em; color: #888; margin-top: 2em; border-top: 1px solid #ddd; padding-top: .4em; }}
+</style></head><body>
+{body}
+<div class="source-url">出典: {html.escape(url)}</div>
+</body></html>"""
 
 
 def page_num(url: str, cfg: dict) -> int:
@@ -206,9 +293,9 @@ def render_article(page, art: Article, workdir: Path, idx: int, cfg: dict) -> li
     return sorted(files)
 
 
-def is_paywalled(page) -> bool:
-    text = page.evaluate("() => document.body.innerText")
-    return any(k in text for k in ("この記事は会員登録で", "有料会員限定", "ログインして続きを読む"))
+def is_paywalled(page, cfg: dict) -> bool:
+    sel = cfg["nikkei"].get("paywall_selector", "")
+    return bool(sel) and page.query_selector(sel) is not None
 
 
 def render_toc(page, issue_date: str, articles: list[Article], out: Path, cfg: dict) -> None:
@@ -317,10 +404,12 @@ def cmd_list(args, cfg) -> None:
     with sync_playwright() as p:
         browser, ctx = new_context(p)
         page = ctx.new_page()
-        issue_url, date = (args.issue_url, args.date or "") if args.issue_url \
+        issue_url, date = (args.issue_url, args.date) if args.issue_url \
             else find_latest_issue(page, cfg)
         print(f"号: {date}  {issue_url}")
-        for i, a in enumerate(collect_articles(page, issue_url, cfg), 1):
+        articles, d2 = collect_articles(page, issue_url, cfg)
+        print(f"号の日付(目次ページより): {d2}")
+        for i, a in enumerate(articles, 1):
             print(f"{i:3d}. [{a.section}] {a.title}\n     {a.url}")
         browser.close()
 
@@ -335,22 +424,28 @@ def cmd_run(args, cfg) -> None:
         browser, ctx = new_context(p)
         page = ctx.new_page()
         if args.issue_url:
-            issue_url = args.issue_url
-            m = re.search(cfg["nikkei"]["issue_link_pattern"], issue_url)
-            date = args.date or (m.group(1) if m else datetime.now().strftime("%Y%m%d"))
+            issue_url, date = args.issue_url, args.date
         else:
             issue_url, date = find_latest_issue(page, cfg)
-        log(f"対象の号: {date}  {issue_url}")
-        if date in history and not args.force:
-            log(f"この号は処理済みです({history[date]['saved_to']})。--force で作り直せます。")
+        if date and date in history and not args.force:
+            log(f"{date}号は処理済みです({history[date]['saved_to']})。--force で作り直せます。")
             browser.close()
             return
 
-        articles = collect_articles(page, issue_url, cfg)
+        articles, toc_date = collect_articles(page, issue_url, cfg)
+        date = date or toc_date or datetime.now().strftime("%Y%m%d")
+        log(f"対象の号: {date}  {issue_url}")
+        if date in history and not args.force:
+            log(f"{date}号は処理済みです({history[date]['saved_to']})。--force で作り直せます。")
+            browser.close()
+            return
         if not articles:
             browser.close()
             sys.exit("記事が見つかりませんでした。config.toml の article_link_pattern を確認してください。")
         log(f"{len(articles)} 本の記事を見つけました。")
+        if args.limit:
+            articles = articles[: args.limit]
+            log(f"--limit 指定により先頭 {len(articles)} 本だけ処理します(お試し用。履歴には記録しません)。")
 
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
@@ -359,7 +454,7 @@ def cmd_run(args, cfg) -> None:
                 log(f"({i}/{len(articles)}) {art.title[:40]}")
                 try:
                     files = render_article(page, art, work, i, cfg)
-                    if not warned and is_paywalled(page):
+                    if not warned and is_paywalled(page, cfg):
                         warned = True
                         log("⚠ 有料記事の続きが表示されていない可能性があります。"
                             "`python nb2pdf.py login` で再ログインしてください。")
@@ -377,6 +472,9 @@ def cmd_run(args, cfg) -> None:
             merge_pdfs(toc, parts, merged, filename.removesuffix(".pdf"))
             saved = save_output(merged, filename, cfg)
 
+    if args.limit:
+        log(f"完了(お試し): {saved}")
+        return
     history[date] = {"issue_url": issue_url, "articles": len(parts),
                      "saved_to": saved, "created_at": datetime.now().isoformat(timespec="seconds")}
     save_history(history)
@@ -394,6 +492,7 @@ def main() -> None:
         sp.add_argument("--date", help="号の日付 YYYYMMDD(--issue-url 指定時のファイル名用)")
         if name == "run":
             sp.add_argument("--force", action="store_true", help="処理済みの号も作り直す")
+            sp.add_argument("--limit", type=int, help="先頭のN本だけ処理する(動作確認用)")
             sp.add_argument("--no-login", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
     cfg = load_config(args.config)

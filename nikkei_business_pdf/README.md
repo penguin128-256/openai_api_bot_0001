@@ -10,9 +10,9 @@ OneDrive に保存します。iPad の OneDrive アプリや「ファイル」�
 
 ## しくみ
 
-1. 保存済みの日経IDログイン情報を使い、ブラウザ(Chromium)で `magazine_url` を開いて最新号を探す
-2. 号ページの記事リンク(`/atcl/` を含むURL)をページ上の順番で集める
-3. 各記事を印刷用に整形(ヘッダー・広告・関連記事を非表示、文字を拡大)してPDF化。複数ページの記事(`?P=2`…)も続けて取得
+1. 保存済みの日経IDログイン情報を使い、ブラウザ(Chromium)で「バックナンバー」ページを開き、最新号の目次ページ(`/atcl/NBD/19/mokuji/番号/`)を探す
+2. 目次ページの記事リンクを紙面の順番で、特集・連載・時事深層などのセクション名と一緒に集める
+3. 各記事から見出し・著者・写真・本文だけを取り出し、読みやすい縦長レイアウト(明朝体、文字大きめ)に組み直してPDF化
 4. 目次ページ+全記事を `日経ビジネス_YYYYMMDD.pdf` に結合し、特集・連載などの単位でしおりを付ける
 5. OneDrive に保存。処理した号は `.state/history.json` に記録し、次回はスキップ
 
@@ -49,7 +49,8 @@ python nb2pdf.py login
 ```bash
 python nb2pdf.py list     # まず記事一覧が正しく取れるか確認
 python nb2pdf.py run      # 最新号をPDF化して保存
-python nb2pdf.py run --issue-url https://business.nikkei.com/magazine/20261123/  # 号を指定
+python nb2pdf.py run --limit 3   # お試し: 先頭3本だけ
+python nb2pdf.py run --issue-url https://business.nikkei.com/atcl/NBD/19/mokuji/00396/  # 号を指定
 python nb2pdf.py run --force   # 作り直す
 ```
 
@@ -82,5 +83,6 @@ python nb2pdf.py run --force   # 作り直す
 - **記事が0本 / 違うリンクを拾う**: サイトの構造が変わった可能性があります。`list` で確認し、
   `config.toml` の `issue_link_pattern` / `article_link_pattern` を調整してください
 - **記事の途中までしかない**: ログイン切れです。`python nb2pdf.py login` を再実行
-- **余計なメニューや広告が残る / 本文が消える**: `hide_selectors` を調整
+- **記事の最後に「有料会員なら…」の案内が出る**: ログインできていません。`login` を再実行
+- **余計な要素が残る / 本文が消える**: `article_selectors` / `article_remove_selectors` を調整
 - **文字が小さい**: `font_scale` を大きく(例: 1.3)、または `format = "A5"`

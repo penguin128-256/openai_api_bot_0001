@@ -4,13 +4,36 @@
 [nikkei]
 # 雑誌(紙面)のバックナンバー一覧ページ
 magazine_url = "https://business.nikkei.com/magazine/"
-# 号ページへのリンクを見つける正規表現(最初のグループ = 号の日付 YYYYMMDD)
-issue_link_pattern = '/magazine/(\d{8})'
-# 号ページ内の記事リンクを見つける正規表現
-article_link_pattern = '/atcl/'
+# 各号の目次ページへのリンクを見つける正規表現(最初のグループ = 号の通し番号。最大のものを最新号とみなす)
+issue_link_pattern = '/atcl/NBD/19/mokuji/(\d+)/'
+# 目次ページのうち、その号の記事一覧が入っている部分(おすすめ・ランキング等を除外するため)
+toc_selector = ".p-parentArticle"
+# セクション名(特集・連載・時事深層など)として使う見出し
+section_heading_selector = "h2"
+# 目次内の記事リンクを見つける正規表現
+article_link_pattern = 'business\.nikkei\.com/atcl/'
+# 除外するリンク(目次内のバックナンバー一覧など)
+article_exclude_pattern = '/mokuji/'
+# 有料記事の続きが読めていないときに表示される要素(ログイン切れの検出用)
+paywall_selector = ".p-paywall, [class*='p-paywall']"
 # 記事ページの「次ページ」リンクを見つける正規表現(複数ページ記事用)
 next_page_pattern = '[?&]P=(\d+)'
-# PDF化の際に非表示にする要素(ヘッダー・広告・関連記事など)
+# 記事ページから取り出す要素(上から順に並べる。最後は本文で、これが無いページは全体を印刷)
+article_selectors = [
+  ".p-article_header_parentTitle",
+  "h1.p-article_header_title",
+  ".p-article_header_meta",
+  ".p-article_header_image",
+  ".p-article_body",
+]
+# 取り出した本文から取り除く要素(広告・SNSボタン・続きを読む案内など)
+article_remove_selectors = [
+  "script", "style", "iframe", "noscript", "button", "form", "input",
+  "[class*='adText']",
+  "[class*='ad-']", "[class*='Ad_']", "[class*='share']", "[class*='follow']",
+  "[class*='banner']", "[class*='recommend']",
+]
+# (本文が見つからないページ用)PDF化の際に非表示にする要素(ヘッダー・広告・関連記事など)
 hide_selectors = [
   "header", "footer", "nav", "aside", "iframe",
   "[class*='ad-']", "[class*='Ad_']", "[id*='ad-']",
