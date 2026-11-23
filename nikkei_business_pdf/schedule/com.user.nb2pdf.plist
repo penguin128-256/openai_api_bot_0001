@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Mac用: 毎週土曜 7:15 に実行。/PATH/TO を実際のパスに書き換えてから
+     cp schedule/com.user.nb2pdf.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.user.nb2pdf.plist -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.user.nb2pdf</string>
+  <key>ProgramArguments</key><array>
+    <string>/PATH/TO/nikkei_business_pdf/.venv/bin/python</string>
+    <string>/PATH/TO/nikkei_business_pdf/nb2pdf.py</string>
+    <string>run</string>
+  </array>
+  <key>StartCalendarInterval</key><dict>
+    <key>Weekday</key><integer>6</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>15</integer>
+  </dict>
+  <key>StandardOutPath</key><string>/tmp/nb2pdf.log</string>
+  <key>StandardErrorPath</key><string>/tmp/nb2pdf.log</string>
+</dict></plist>

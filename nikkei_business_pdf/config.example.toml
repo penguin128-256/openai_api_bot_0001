@@ -1,0 +1,47 @@
+# 日経ビジネス → PDF → OneDrive 設定ファイル
+# このファイルを config.toml にコピーして編集してください。
+
+[nikkei]
+# 雑誌(紙面)のバックナンバー一覧ページ
+magazine_url = "https://business.nikkei.com/magazine/"
+# 号ページへのリンクを見つける正規表現(最初のグループ = 号の日付 YYYYMMDD)
+issue_link_pattern = '/magazine/(\d{8})'
+# 号ページ内の記事リンクを見つける正規表現
+article_link_pattern = '/atcl/'
+# 記事ページの「次ページ」リンクを見つける正規表現(複数ページ記事用)
+next_page_pattern = '[?&]P=(\d+)'
+# PDF化の際に非表示にする要素(ヘッダー・広告・関連記事など)
+hide_selectors = [
+  "header", "footer", "nav", "aside", "iframe",
+  "[class*='ad-']", "[class*='Ad_']", "[id*='ad-']",
+  "[class*='recommend']", "[class*='ranking']", "[class*='share']",
+  "[class*='follow']", "[class*='banner']", "[class*='paywall']",
+]
+# ページ読み込み後の待ち時間(ミリ秒)
+wait_ms = 1500
+# 記事間のアクセス間隔(秒)。サーバーに負荷をかけないよう余裕を持たせてください
+request_interval_sec = 3
+# 1号あたりの最大記事数(安全装置)
+max_articles = 150
+
+[pdf]
+# 用紙サイズ: "A4" / "A5" / "B5" など。iPadなら A4 が見やすい
+format = "A4"
+# 文字の拡大率(1.0 = そのまま)
+font_scale = 1.15
+margin_mm = 12
+
+[output]
+# "folder": OneDriveの同期フォルダに保存(Mac/Windowsで OneDrive アプリを使っている場合。おすすめ)
+# "graph" : Microsoft Graph API で直接アップロード(OneDriveアプリがないPC/サーバー用)
+mode = "folder"
+# mode = "folder" のときの保存先(OneDrive同期フォルダ内)
+#   Mac 例:     "~/Library/CloudStorage/OneDrive-Personal/日経ビジネス"
+#   Windows 例: "~/OneDrive/日経ビジネス"
+folder = "~/OneDrive/日経ビジネス"
+# mode = "graph" のときの OneDrive 上の保存フォルダ
+graph_folder = "日経ビジネス"
+# mode = "graph" のとき: Azure ポータルで登録したアプリの「アプリケーション (クライアント) ID」
+graph_client_id = ""
+# 個人用Microsoftアカウントなら "consumers"、会社/学校アカウントなら "organizations"
+graph_tenant = "consumers"
