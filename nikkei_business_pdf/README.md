@@ -8,7 +8,29 @@ OneDrive に保存します。iPad の OneDrive アプリや「ファイル」�
 > 自分だけが読むためのツールです。作成したPDFを他人に共有・配布しないでください。
 > 自動取得について日経IDの利用規約もご確認ください。アクセス間隔(既定3秒)は短くしないでください。
 
-## しくみ
+## 2つのモード
+
+| コマンド | 内容 | 向いている人 |
+|---|---|---|
+| `python nb2pdf.py viewer` | **誌面ビューアーの表示をそのまま**1ページずつ撮影してPDF化。紙の雑誌と同じレイアウト | 紙面の見た目で読みたい |
+| `python nb2pdf.py run` | 記事の本文を取り出して、読みやすく組み直したPDFを作成(しおり付き・文字検索可) | 文字を大きく読みたい |
+
+### 誌面モード(viewer)のしくみ
+
+ログイン済みのブラウザで目次ページの「誌面ビューアーで読む」を開き、
+「画面を撮影 → 次のページへ」を、ページが変わらなくなるまで繰り返して
+`日経ビジネス_YYYYMMDD_誌面.pdf` を作ります。ビューアーの保護機能を回避する処理はしていません。
+
+うまく撮れない場合:
+
+```bash
+python nb2pdf.py viewer --show --limit 5   # ブラウザを表示して動きを確認(5ページだけ保存)
+python nb2pdf.py viewer --debug            # ビューアーの画面と構造を debug/ に保存(設定調整用)
+```
+
+`config.toml` の `[viewer]` で、撮影範囲(`page_selector`)やページのめくり方(`next_actions`)を調整できます。
+
+## 記事モード(run)のしくみ
 
 1. 保存済みの日経IDログイン情報を使い、ブラウザ(Chromium)で「バックナンバー」ページを開き、最新号の目次ページ(`/atcl/NBD/19/mokuji/番号/`)を探す
 2. 目次ページの記事リンクを紙面の順番で、特集・連載・時事深層などのセクション名と一緒に集める
@@ -48,7 +70,8 @@ python nb2pdf.py login
 
 ```bash
 python nb2pdf.py list     # まず記事一覧が正しく取れるか確認
-python nb2pdf.py run      # 最新号をPDF化して保存
+python nb2pdf.py viewer   # 最新号を誌面のままPDF化して保存
+python nb2pdf.py run      # 最新号を記事ごとに組み直したPDFにして保存
 python nb2pdf.py run --limit 3   # お試し: 先頭3本だけ
 python nb2pdf.py run --issue-url https://business.nikkei.com/atcl/NBD/19/mokuji/00396/  # 号を指定
 python nb2pdf.py run --force   # 作り直す
@@ -60,7 +83,7 @@ python nb2pdf.py run --force   # 作り直す
 
 - **Mac**: `schedule/com.user.nb2pdf.plist` の `/PATH/TO` を書き換え、ファイル内のコメントの手順で登録
 - **Windows**: `schedule/register_windows_task.ps1` を実行
-- **Linux**: `crontab -e` に `15 7 * * 6 cd /path/to/nikkei_business_pdf && .venv/bin/python nb2pdf.py run`
+- **Linux**: `crontab -e` に `15 7 * * 6 cd /path/to/nikkei_business_pdf && .venv/bin/python nb2pdf.py viewer`
 
 ## iPad での読み方
 

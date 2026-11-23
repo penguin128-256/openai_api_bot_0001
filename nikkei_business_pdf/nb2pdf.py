@@ -9,6 +9,7 @@
     python nb2pdf.py run              # 最新号をPDF化して保存(処理済みの号はスキップ)
     python nb2pdf.py run --issue-url URL   # 号を指定して実行
     python nb2pdf.py run --force      # 処理済みでも作り直す
+    python nb2pdf.py viewer           # 誌面ビューアーの見た目そのままでPDF化(紙面レイアウト)
     python nb2pdf.py list             # 号ページから見つかった記事一覧を表示(動作確認用)
 """
 from __future__ import annotations
@@ -373,10 +374,11 @@ def save_history(h: dict) -> None:
 
 # ---------------------------------------------------------------- コマンド
 
-def new_context(p, headless: bool = True):
+def new_context(p, headless: bool = True, viewport=(1100, 1400), scale: float = 1):
     exe = os.environ.get("NB2PDF_CHROMIUM")  # 任意: 使用するChromiumのパス
     browser = p.chromium.launch(headless=headless, executable_path=exe or None)
-    kw = {"locale": "ja-JP", "viewport": {"width": 1100, "height": 1400}}
+    kw = {"locale": "ja-JP", "viewport": {"width": viewport[0], "height": viewport[1]},
+          "device_scale_factor": scale}
     if SESSION_FILE.exists():
         kw["storage_state"] = str(SESSION_FILE)
     return browser, browser.new_context(**kw)
@@ -481,22 +483,73 @@ def cmd_run(args, cfg) -> None:
     log(f"完了: {saved}")
 
 
+def cmd_viewer(args, cfg) -> None:
+    """誌面ビューアーの表示をそのまま撮影してPDFにする。"""
+    import viewer
+    from playwright.sync_api import sync_playwright
+
+    if not SESSION_FILE.exists() and not args.no_login:
+        sys.exit("ログイン情報がありません。先に `python nb2pdf.py login` を実行してください。")
+    vcfg = cfg.get("viewer", {})
+    history = load_history()
+    with sync_playwright() as p:
+        browser, ctx = new_context(p, headless=not args.show,
+                                   viewport=tuple(vcfg.get("viewport", [1200, 1700])),
+                                   scale=vcfg.get("device_scale_factor", 2))
+        page = ctx.new_page()
+        if args.issue_url:
+            issue_url, date = args.issue_url, args.date
+        else:
+            issue_url, date = find_latest_issue(page, cfg)
+        key = f"{date}_viewer"
+        if date and key in history and not args.force and not args.debug:
+            log(f"{date}号(誌面)は処理済みです。--force で作り直せます。")
+            browser.close()
+            return
+        log(f"対象の号: {date}  {issue_url}")
+        vpage = viewer.open_viewer(ctx, page, issue_url, vcfg)
+        if args.debug:
+            viewer.wait_settled(vpage, vcfg)
+            viewer.save_debug(vpage, BASE_DIR / "debug")
+            browser.close()
+            return
+        shots = viewer.capture_viewer(vpage, vcfg)
+        if args.limit:
+            shots = shots[: args.limit]
+        ctx.storage_state(path=str(SESSION_FILE))
+        browser.close()
+    log(f"{len(shots)} ページを撮影しました。PDFにまとめます。")
+    filename = f"日経ビジネス_{date}_誌面.pdf"
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / filename
+        viewer.images_to_pdf(shots, out, vcfg)
+        saved = save_output(out, filename, cfg)
+    if not args.limit:
+        history[key] = {"issue_url": issue_url, "pages": len(shots), "saved_to": saved,
+                        "created_at": datetime.now().isoformat(timespec="seconds")}
+        save_history(history)
+    log(f"完了: {saved}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="日経ビジネス最新号をPDF化してOneDriveに保存")
     ap.add_argument("--config", type=Path, default=BASE_DIR / "config.toml")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("login", help="日経IDでログインしてセッションを保存")
-    for name in ("run", "list"):
+    for name in ("run", "list", "viewer"):
         sp = sub.add_parser(name)
         sp.add_argument("--issue-url", help="最新号ではなく、この号ページを処理する")
         sp.add_argument("--date", help="号の日付 YYYYMMDD(--issue-url 指定時のファイル名用)")
-        if name == "run":
+        if name in ("run", "viewer"):
             sp.add_argument("--force", action="store_true", help="処理済みの号も作り直す")
-            sp.add_argument("--limit", type=int, help="先頭のN本だけ処理する(動作確認用)")
+            sp.add_argument("--limit", type=int, help="先頭のN本(viewerはNページ)だけ保存する(動作確認用)")
             sp.add_argument("--no-login", action="store_true", help=argparse.SUPPRESS)
+        if name == "viewer":
+            sp.add_argument("--show", action="store_true", help="ブラウザ画面を表示しながら実行")
+            sp.add_argument("--debug", action="store_true", help="ビューアーを開いて調査用情報を debug/ に保存するだけ")
     args = ap.parse_args()
     cfg = load_config(args.config)
-    {"login": cmd_login, "run": cmd_run, "list": cmd_list}[args.cmd](args, cfg)
+    {"login": cmd_login, "run": cmd_run, "list": cmd_list, "viewer": cmd_viewer}[args.cmd](args, cfg)
 
 
 if __name__ == "__main__":

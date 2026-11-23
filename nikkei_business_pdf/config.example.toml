@@ -68,3 +68,24 @@ graph_folder = "日経ビジネス"
 graph_client_id = ""
 # 個人用Microsoftアカウントなら "consumers"、会社/学校アカウントなら "organizations"
 graph_tenant = "consumers"
+
+[viewer]
+# `python nb2pdf.py viewer` 用: 誌面ビューアーの画面を1ページずつ撮影してPDFにする
+# 目次ページの「誌面ビューアーで読む」ボタン
+open_button_selector = ".c-viewerLink"
+# ビューアーのURLを直接指定する場合(空なら上のボタンから開く)
+viewer_url = ""
+# 撮影する要素(空なら画面全体)。`viewer --debug` の結果を見て設定すると余白なしで撮れる
+page_selector = ""
+# 画面サイズ(縦長にすると1ページずつ表示されやすい)と解像度の倍率(2 = Retina相当)
+viewport = [1200, 1700]
+device_scale_factor = 2
+# 撮影前に行う操作(例: ["click:.single-page-button"] で単ページ表示に切り替え)
+before_actions = []
+# 次のページへ進む操作の候補。上から順に試し、ページが変わった操作を使い続ける
+#   "key:キー名" / "click:CSSセレクタ" / "clickxy:横の割合,縦の割合"(画面上の位置をクリック)
+next_actions = ["key:ArrowLeft", "key:ArrowRight", "key:PageDown", "clickxy:0.03,0.5", "clickxy:0.97,0.5"]
+# ページをめくった後の待ち時間(ミリ秒)
+page_wait_ms = 1500
+max_pages = 400
+jpeg_quality = 85
